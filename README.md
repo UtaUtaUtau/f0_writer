@@ -18,6 +18,8 @@ Extensions in ENUNU are done by passing arguments to each possible extension. Th
 python script.py --f0 "path/to/f0" --must "path/to/ust"
 ```
 
+The script has a debug mode which can be enabled by adding `-d` to the arguments.
+
 ### options.json
 
 I'll just put the stuff in a table.
@@ -26,8 +28,6 @@ Option | Value Type | Description
  :---: | :---: | ---
  `enable` | `boolean` | Enables the F0 writer.
  `trigonometric` | `boolean` | Uses trigonometric functions for pitchbend types instead of polynomials.
-
-The script has a debug mode which can be enabled by adding `-d` to the arguments.
 
 # Remarks
 This extension was made really quickly as a test for the most part. So far I have not encountered any errors in its ways, but it could happen! If you open the code and see the huge amount of classes, that is [pyUtau](https://github.com/UtaUtaUtau/pyUtau), which is my own library for reading USTs sent by plugins. I wouldn't usually want to do this, but the ways that portable Python works didn't allow me to import packages/libraries from the same directory. I tried everything but this is the easiest option by far... so I hope you don't mind. I would've used [utaupy](https://github.com/oatsu-gh/utaupy) but I've already coded the bulk in pyUtau and I was testing outside the extension context. If you're curious why, here's why:
