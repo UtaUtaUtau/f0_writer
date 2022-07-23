@@ -26,7 +26,7 @@ I'll just put the stuff in a table.
 
 Option | Value Type | Description
  :---: | :---: | ---
- `enable` | `boolean` | Enables the F0 writer.
+ `enabled` | `boolean` | Enables the F0 writer.
  `trigonometric` | `boolean` | Uses trigonometric functions for pitchbend types instead of polynomials.
 
 # Remarks
