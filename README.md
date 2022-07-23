@@ -3,7 +3,7 @@ ENUNU extension that reads Mode2 UST tuning and transfers it to F0.
  
 # How to Use
 ### As an extension
-1. Paste the timing_corrector folder into the voicebank of choice.
+1. Paste the `f0_writer` folder into the voicebank of choice.
 2. Append the text written in `enuconfig.yaml` at the end of the existing `enuconfig.yaml` of the voicebank.
 	- If the voicebank in question already has this part in its `enuconfig.yaml`, you may edit the `acoustic_editor` section to be similar to the given `enuconfig.yaml`.
 3. The extension can be disabled by opening the `options.json` file and setting the `enabled` option to `false`
