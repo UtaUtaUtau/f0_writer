@@ -583,14 +583,23 @@ def midi_to_hz(x):
 def hz_to_midi(x):
     return 12 * np.log2(x / 440) + 69
 
-def s_bend(x):
-    return x * x * (3 - 2 * x)
+def s_bend(x, trig=False):
+    if trig:
+        return np.sin(np.pi * x / 2) ** 2
+    else:
+        return x * x * (3 - 2 * x)
 
-def r_bend(x):
-    return x * (2 - x)
+def r_bend(x, trig=False):
+    if trig:
+        return np.sin(np.pi * x / 2)
+    else:
+        return x * (2 - x)
 
-def j_bend(x):
-    return x * x
+def j_bend(x, trig=False):
+    if trig:
+        return 1 - np.cos(np.pi * x / 2)
+    else:
+        return x * x
 
 if __name__ == '__main__':
     options = json.loads(open('options.json').read())
@@ -599,9 +608,10 @@ if __name__ == '__main__':
         parser = ArgumentParser(description='Reads the UST and transfers its tuning to F0 information')
         parser.add_argument('--f0', help='The F0 CSV file')
         parser.add_argument('--ust', help='The UST file')
+        parser.add_argument('--debug', '-d', action='store_true', help='Debug mode.')
 
         args, _ = parser.parse_known_args()
-        
+
         original = []
 
         with open(args.f0) as f:
@@ -648,31 +658,44 @@ if __name__ == '__main__':
                 times = 200 * np.array(tuning.pbw, dtype=np.float64) / 1000
                 tuning_len = times.shape[0]
                 
-                e = math.floor(s + math.floor(np.sum(times)))
+                e = max(math.floor(s + math.floor(np.sum(times))), math.floor(st))
                 
-                stp = tuning.start_pitch / 10
+                stp = f0[s] - note.note_num
                 temp = np.zeros(e-s)
                 
-                if stp == 0:
-                    if f0[s] != 0:
-                        stp = f0[s] - note.note_num
+                if f0[s] == 0:
+                    stp = tuning.start_pitch / 10 if tuning.start_pitch else 0
 
                 bs = 0
                 for i in range(tuning_len):
                     time = math.floor(times[i])
-                    bend = np.linspace(0, 1, time)
-                    pbm = tuning.pbm[i]
-                    etp = tuning.pby[i] / 10
-                    
-                    if not pbm:
-                        bend = s_bend(bend)
-                    elif pbm == 'r':
-                        bend = r_bend(bend)
-                    elif pbm == 'j':
-                        bend = j_bend(bend)
+                    if time > 0:
+                        bend = np.linspace(0, 1, time)
+                        
+                        try:
+                            pbm = tuning.pbm[i]
+                        except IndexError:
+                            pbm = ''
+                            
+                        try:
+                            etp = tuning.pby[i] / 10
+                        except IndexError:
+                            etp = 0
+                        
+                        if not pbm:
+                            bend = s_bend(bend, options['trigonometric'])
+                        elif pbm == 'r':
+                            bend = r_bend(bend, options['trigonometric'])
+                        elif pbm == 'j':
+                            bend = j_bend(bend, options['trigonometric'])
 
-                    bend = stp + (etp - stp) * bend
-                    temp[bs:bs+time] = bend
+                        bend = stp + (etp - stp) * bend
+                        temp[bs:bs+time] = bend
+                    else:
+                        try:
+                            etp = tuning.pby[i] / 10
+                        except IndexError:
+                            etp = 0
                     bs += time
                     stp = etp
                     
@@ -685,13 +708,15 @@ if __name__ == '__main__':
                 s = math.floor(st + length * (1 - vbr.length / 100))
                 e = math.floor(st+length)
                 temp = np.linspace(0, 1000 * (e-s) / 200, num=e-s, dtype=np.float64)
-                temp = vbr.depth * np.sin(2 * np.pi * temp / vbr.cycle + 2 * np.pi * vbr.phase / 100) / 100
-                
-                fin = math.floor(vbr.fade_in * (e-s) / 100)
-                fout = math.floor(vbr.fade_out * (e-s) / 100)
-                
-                temp[0:fin] *= np.linspace(0, 1, fin)
-                temp[-fout:] *= np.linspace(1, 0, fout)
+                temp = vbr.depth * np.sin(2 * np.pi * temp / vbr.cycle + 2 * np.pi * vbr.phase / 100) / 100 + vbr.depth * vbr.offset / 10000
+
+                if vbr.fade_in > 0:
+                    fin = math.floor(vbr.fade_in * (e-s) / 100)
+                    temp[0:fin] *= np.linspace(0, 1, fin)
+
+                if vbr.fade_out > 0:
+                    fout = math.floor(vbr.fade_out * (e-s) / 100)
+                    temp[-fout:] *= np.linspace(1, 0, fout)
                 
                 f0[s:e] += temp
             st += length
@@ -704,6 +729,12 @@ if __name__ == '__main__':
             if f0[i] == 0 and original[i] != 0:
                 f0[i] = original[i]
 
-        with open(args.f0, 'w', encoding='utf8') as f:
-            for i in f0:
-                f.write(f'{i:.16f}\n')
+        if args.debug:
+            import matplotlib.pyplot as plt
+            plt.plot(original, label='Original')
+            plt.plot(f0, label='UST')
+            plt.show()
+        else:
+            with open(args.f0, 'w', encoding='utf8') as f:
+                for i in f0:
+                    f.write(f'{i:.16f}\n')
