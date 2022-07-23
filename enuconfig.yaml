@@ -1,0 +1,14 @@
+extensions:
+  ust_editor: null
+  ust_converter: built-in
+  score_editor: null
+  timelag_calculator: built-in
+  timelag_editor: null
+  duration_calculator: built-in
+  duration_editor: null
+  timing_calculator: built-in
+  timing_editor: null
+  acoustic_calculator: built-in
+  acoustic_editor: "%v/f0_writer/f0_writer.py"
+  wav_synthesizer: built-in
+  wav_editor: null
