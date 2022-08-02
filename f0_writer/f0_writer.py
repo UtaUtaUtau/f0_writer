@@ -581,7 +581,7 @@ def midi_to_hz(x):
     return 440 * (2 ** ((x - 69) / 12))
 
 def hz_to_midi(x):
-    return 12 * np.log2(x / 440) + 69
+    return 12 * np.log2(np.maximum(x, 0.1) / 440) + 69
 
 def s_bend(x, trig=False):
     if trig:
@@ -602,9 +602,11 @@ def j_bend(x, trig=False):
         return x * x
 
 if __name__ == '__main__':
+    # Read options file
     options = json.loads(open('options.json').read())
     
-    if options['enabled']:
+    if options['enabled']: # Skip everything if disabled
+        # Get needed arguments
         parser = ArgumentParser(description='Reads the UST and transfers its tuning to F0 information')
         parser.add_argument('--f0', help='The F0 CSV file')
         parser.add_argument('--ust', help='The UST file')
@@ -612,16 +614,20 @@ if __name__ == '__main__':
 
         args, _ = parser.parse_known_args()
 
-        original = []
+        if args.debug:
+            import matplotlib.pyplot as plt
 
+        # Read original F0
+        original = []
         with open(args.f0) as f:
             for v in f.readlines():
                 original.append(float(v))
-
         original = np.array(original)
 
+        # Read UST
         plugin = UtauPlugin(args.ust)
 
+        # Calculate note lengths relative to F0
         N = len(plugin.notes)
 
         spb = 60 / float(plugin.settings['Tempo'])
@@ -633,83 +639,112 @@ if __name__ == '__main__':
             
             lengths.append(200 * spb * note.length / 480)
 
+        # Initialize new F0
         f0_len = original.shape[0]
         f0 = np.zeros(f0_len, dtype=np.float64)
 
         st = 0
-        for i in range(N):
+        for i in range(N): # Loop through all notes
             note = plugin.notes[i]
             length = lengths[i]
             
-            if note.lyric == 'R':
+            if note.lyric == 'R': # Skip rest note
                 st += length
                 continue
             
-            # Flat Pitch Pass
+            # Flat Pitch Pass (plus modulation)
+            mod = note.modulation
             s = math.floor(st)
             e = math.floor(st+length)
-            f0[s:e] = note.note_num
+            if mod != None:
+                f0[s:e] = note.note_num + mod * (hz_to_midi(original[s:e]) - note.note_num) / 100
+            else:
+                f0[s:e] = hz_to_midi(original[s:e]) # Default mod is mod 100 so I'm just following ameya's steps here
 
-            # Mode2 Pitch Pass
+            # Mode2 Pitch Pass (plus modulation too cuz the first pass also covers notes without tuning)
             tuning = note.mode2pitch
             if tuning:
+                # Calculate starting and ending times
                 s = math.floor(st + 200 * tuning.start_time / 1000)
                 
                 times = 200 * np.array(tuning.pbw, dtype=np.float64) / 1000
                 tuning_len = times.shape[0]
                 
                 e = max(math.floor(s + math.floor(np.sum(times))), math.floor(st))
-                
+
+                # Calculate start pitch cuz apparently UTAU's isn't reliable :angry:
                 stp = f0[s] - note.note_num
                 temp = np.zeros(e-s)
                 
-                if f0[s] == 0:
+                if f0[s] < 24:
                     stp = tuning.start_pitch / 10 if tuning.start_pitch else 0
 
+                # Loop through the pitchbend and TUNE
                 bs = 0
                 for i in range(tuning_len):
                     time = math.floor(times[i])
                     if time > 0:
-                        bend = np.linspace(0, 1, time)
+                        bend = np.linspace(0, 1, time) # Linear bend slay
                         
-                        try:
+                        try: # Apparently the array lengths of the mode2 properties can desync too so I just pick defaults
                             pbm = tuning.pbm[i]
                         except IndexError:
                             pbm = ''
                             
-                        try:
+                        try: # Same for you :angry:
                             etp = tuning.pby[i] / 10
                         except IndexError:
                             etp = 0
                         
-                        if not pbm:
+                        if not pbm: # Apply the slay bend types
                             bend = s_bend(bend, options['trigonometric'])
                         elif pbm == 'r':
                             bend = r_bend(bend, options['trigonometric'])
                         elif pbm == 'j':
                             bend = j_bend(bend, options['trigonometric'])
 
+                        # Add it in to the temporary bend array
                         bend = stp + (etp - stp) * bend
                         temp[bs:bs+time] = bend
                     else:
-                        try:
+                        try: # oh shit repeating code.
                             etp = tuning.pby[i] / 10
                         except IndexError:
                             etp = 0
                     bs += time
                     stp = etp
-                    
-                f0[s:e] = note.note_num
+
+                # Apply offset mask cuz modulation is sussy
+                mask_start = f0[s]
+                if f0[s] < 24:
+                    mask_start = tuning.start_pitch / 10 if tuning.start_pitch else 0
+                    mask_start += note.note_num
+                
+                mask = np.empty(e-s)
+                mask.fill(note.note_num)
+                mask[0:math.floor(st)-s] = mask_start
+
+                # Add the slay bends. Click the slay button !
+                if mod != None:
+                    f0[s:e] = note.note_num + mod * (hz_to_midi(original[s:e]) - mask) / 100
+                else:
+                    f0[s:e] = hz_to_midi(original[s:e])
                 f0[s:e] += temp
             
             # Vibrato Pass
             vbr = note.vibrato
             if vbr:
+                # Calculate start and end point slay
                 s = math.floor(st + length * (1 - vbr.length / 100))
                 e = math.floor(st+length)
+
+                # Linspace for slay sine wave vibrato. They are shaking
                 temp = np.linspace(0, 1000 * (e-s) / 200, num=e-s, dtype=np.float64)
+
+                # Make the linspace go wobble wobble
                 temp = vbr.depth * np.sin(2 * np.pi * temp / vbr.cycle + 2 * np.pi * vbr.phase / 100) / 100 + vbr.depth * vbr.offset / 10000
 
+                # Fade in and Fade out yasss
                 if vbr.fade_in > 0:
                     fin = math.floor(vbr.fade_in * (e-s) / 100)
                     temp[0:fin] *= np.linspace(0, 1, fin)
@@ -717,10 +752,12 @@ if __name__ == '__main__':
                 if vbr.fade_out > 0:
                     fout = math.floor(vbr.fade_out * (e-s) / 100)
                     temp[-fout:] *= np.linspace(1, 0, fout)
-                
+
+                # Add the slay vibrato. Click the slay button again !
                 f0[s:e] += temp
             st += length
 
+        # Now we convert it to F0 cuz we were calculating in the language of the MIDI gods
         f0 = midi_to_hz(f0)
         for i in range(f0_len):
             if f0[i] < 10:
@@ -729,8 +766,7 @@ if __name__ == '__main__':
             if f0[i] == 0 and original[i] != 0:
                 f0[i] = original[i]
 
-        if args.debug:
-            import matplotlib.pyplot as plt
+        if args.debug: # Debug things :crazy:
             plt.plot(original, label='Original')
             plt.plot(f0, label='UST')
             plt.show()
