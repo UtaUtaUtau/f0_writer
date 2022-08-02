@@ -760,7 +760,7 @@ if __name__ == '__main__':
         # Now we convert it to F0 cuz we were calculating in the language of the MIDI gods
         f0 = midi_to_hz(f0)
         for i in range(f0_len):
-            if f0[i] < 10:
+            if f0[i] < 30:
                 f0[i] = 0
 
             if f0[i] == 0 and original[i] != 0:
